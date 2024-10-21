@@ -1,0 +1,53 @@
+name: Overleaf Sync with Git
+on:
+  schedule:
+    - cron: "0 0/4 * * *"
+  workflow_dispatch:
+      
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Delete Old Artifacts
+      uses: actions/github-script@v6
+      id: artifact
+      with:
+        script: |
+          const res = await github.rest.actions.listArtifactsForRepo({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+          })
+    
+          res.data.artifacts
+            .forEach(({ id }) => {
+              github.rest.actions.deleteArtifact({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                artifact_id: id,
+              })
+            })
+
+    - uses: actions/checkout@v2
+      with:
+        path: repo/
+
+    - name: Run entrypoint.sh
+      run: |
+        cd repo/
+        chmod +x ./entrypoint.sh
+        ./entrypoint.sh ../tmp
+      env:
+        OVERLEAF_PROJECT_ID: ${{ secrets.OVERLEAF_PROJECT_ID }}
+        OVERLEAF_COOKIE: ${{ secrets.OVERLEAF_COOKIE }}
+        OVERLEAF_HOST: ${{ secrets.OVERLEAF_HOST }}
+    
+    - run: |
+        cd repo
+        rm -rf ./paper
+        mkdir -p ./paper
+        cp -r ../artifacts/* ./paper
+        git config user.name "overleaf Sync Bot"
+        git config user.email "actions@github.com"
+        git add paper/
+        if [[ $(git diff HEAD --stat) == '' ]]; then (echo 'Working tree is clean') 
+        else (git commit -m "Sync with overleaf remote"  && git push) fi
